@@ -1,0 +1,25 @@
+轉檔：
+1.打開system.py檔更改參數內容
+
+2.命令提示字元執行
+pipreqs ./ --force --encoding=utf8
+
+3.執行完在執行：
+pip install --upgrade -r requirements.txt
+
+4.執行完在執行：
+pyinstaller --noconfirm --clean --onefile --windowed ^
+--hidden-import=pyautogui ^
+--hidden-import=PIL ^
+--hidden-import=screeninfo ^
+--hidden-import=openpyxl ^
+--hidden-import=pandas ^
+--hidden-import=mss ^
+--hidden-import=mss.tools ^
+--hidden-import=email.mime.text ^
+--hidden-import=email.mime.multipart ^
+--hidden-import=email.mime.base ^
+sys9.py
+
+
+5.完成後，執行檔在dist>system資料夾內的system2.exe
