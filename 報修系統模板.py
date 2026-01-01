@@ -24,28 +24,31 @@ from ftplib import FTP
 import mss
 import mss.tools
 
-# 配置參數
+# ==========================================
+# [設定區] 請依據新公司需求修改以下參數
+# ==========================================
 CONFIG = {
-    "name": "金總源",
-    "prefix": "C",
-    "system_name": "金總源-資訊報修系統",
-    "password": "16262599",
-    "record_folder": r"C:\\贊耀報修紀錄_金總源",
+    "name": "新公司名稱",  # 公司名稱
+    "prefix": "X",  # 報修單 ID 前綴代碼
+    "system_name": "新公司名稱-資訊報修系統",  # 視窗標題
+    "password": "",  # 若需要密碼驗證請填寫，否則留空
+    "record_folder": r"C:\\贊耀報修紀錄_新公司",  # 本地存檔路徑
     "excel_file": "ZY_MA_Recoder.xlsx",
     "recipient_emails": [
         "zanyao0925@gmail.com",
-        "a3180709@ags-top.com",
         "sheep255174@gmail.com",
         "Zanyao.Service@msa.hinet.net",
+        # 在此新增客戶端接收窗口
     ],
-    "ftp_host": "192.168.1.253",
+    "ftp_host": "192.168.1.XXX",  # FTP IP
     "ftp_port": 8821,
-    "ftp_username": "service",
-    "ftp_password": "Zanyao0915",
+    "ftp_username": "ftp_user",
+    "ftp_password": "ftp_password",
     "ftp_target_folder": "/ZY_MA_Recoder",
     "sender_email": "Zanyao.Service@msa.hinet.net",
     "smtp_password": "Zanyao0915$",
 }
+# ==========================================
 
 attachment_paths = []
 preview_images = []
@@ -218,7 +221,10 @@ def capture_screenshot():
 def generate_new_report_id():
     today = datetime.now()
     today_str = today.strftime("%Y%m%d")
-    default_id = f"{CONFIG['prefix']}{today_str}-001"
+    
+    # [設定區] 請修改此處的前綴代碼 (例如 'N' 代表 New Company)
+    prefix = CONFIG["prefix"]
+    default_id = f"{prefix}{today_str}-001"
 
     try:
         ftp = FTP()
@@ -238,7 +244,7 @@ def generate_new_report_id():
         df["報修時間"] = pd.to_datetime(df["報修時間"], errors="coerce")
         today_count = (df["報修時間"].dt.date == today.date()).sum()
 
-        return f"{CONFIG['prefix']}{today_str}-{today_count + 1:03d}"
+        return f"{prefix}{today_str}-{today_count + 1:03d}"
 
     except:
         return default_id
@@ -261,17 +267,6 @@ def send_customer_email(customer_email):
             server.sendmail(sender_email, customer_email, msg.as_string())
     except:
         pass
-
-
-def generate_email_body(name, staff_id, email, phone, anydesk, description):
-    return (
-        f"姓名: {name}\n"
-        f"工號: {staff_id}\n"
-        f"信箱: {email}\n"
-        f"電話(分機): {phone}\n"
-        f"Anydesk號碼: {anydesk}\n"
-        f"問題描述: {description}"
-    )
 
 
 def send_email(
@@ -394,6 +389,10 @@ def upload_excel_to_ftp(single_record: dict):
 
 def verify_password():
     """顯示密碼輸入視窗並驗證"""
+    # 若 CONFIG["password"] 為空，則直接通過
+    if not CONFIG["password"]:
+        return True
+
     pw_window = tk.Toplevel(root)
     pw_window.title("密碼驗證")
     pw_window.geometry("300x150")
@@ -419,10 +418,12 @@ def verify_password():
 
 
 def submit_report():
+    # 執行密碼驗證 (若無密碼設定則自動通過)
     if not verify_password():
         return
 
     try:
+        # 欄位皆非必填，若為空則填入 "未填寫"
         name = clean_text(name_entry.get() or "未填寫")
         staff_id = clean_text(staff_id_entry.get() or "未填寫")
         email = clean_text(email_entry.get() or "未填寫")
@@ -431,6 +432,11 @@ def submit_report():
         description = clean_text(
             description_text.get("1.0", tk.END).strip() or "未填寫"
         )
+
+        # [設定區] 若要強制檢查必填欄位，請在此處加入判斷
+        # if not email or email == "未填寫":
+        #     messagebox.showerror("錯誤", "信箱為必填欄位")
+        #     return
 
     except ValueError as e:
         messagebox.showerror("錯誤", f"清理文字發生問題: {e}")

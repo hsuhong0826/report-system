@@ -29,6 +29,8 @@ import mss.tools
 
 # 配置參數
 CONFIG = {
+    "name": "揚發",
+    "prefix": "R",
     "system_name": "揚發_資訊管家",
     "record_folder": r"C:\\贊耀報修紀錄_揚發",
     "excel_file": "ZY_MA_Recoder.xlsx",
@@ -222,7 +224,7 @@ def capture_screenshot():
 def generate_new_report_id():
     today = datetime.now()
     today_str = today.strftime("%Y%m%d")
-    default_id = f"R{today_str}-001"
+    default_id = f"{CONFIG['prefix']}{today_str}-001"
 
     try:
         ftp = FTP()
@@ -242,7 +244,7 @@ def generate_new_report_id():
         df["報修時間"] = pd.to_datetime(df["報修時間"], errors="coerce")
         today_count = (df["報修時間"].dt.date == today.date()).sum()
 
-        return f"R{today_str}-{today_count + 1:03d}"
+        return f"{CONFIG['prefix']}{today_str}-{today_count + 1:03d}"
 
     except:
         return default_id
@@ -294,7 +296,7 @@ def send_email(
     recipient_emails = CONFIG["recipient_emails"]
     recipient_email_str = ", ".join(recipient_emails)
 
-    subject = "揚發_電腦報修單"
+    subject = f"{CONFIG['name']}_電腦報修單"
     body = (
         f"ID: {report_id}\n"
         f"姓名: {name}\n"
@@ -571,7 +573,7 @@ def main():
     submit_button.grid(row=12, column=0, columnspan=2, pady=(20, 20))
 
     footer_label = tk.Label(
-        root, text="Copyright by ZY-Info V1.5", font=("標楷體", 11, "bold")
+        root, text="Copyright by ZY-Info V1.6", font=("標楷體", 11, "bold")
     )
     footer_label.grid(row=13, column=1, sticky=tk.E, padx=10, pady=10)
 

@@ -1,16 +1,13 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
-
-
 import os
 import io
 from io import BytesIO
 import uuid
 import pandas as pd
 import tkinter as tk
-from tkinter import messagebox, filedialog
+from tkinter import messagebox, filedialog, ttk
 from datetime import datetime
 import openpyxl
 import smtplib
@@ -24,26 +21,28 @@ from PIL import Image, ImageTk
 import pyautogui
 from screeninfo import get_monitors
 from ftplib import FTP
+import mss
+import mss.tools
 
 # 配置參數
 CONFIG = {
-    #####  客戶方面(更改) #####
-    "system_name": "立侑螺絲-資訊報修系統",  # 系統名稱
-    "password": "22239029",  # 密碼
-    "record_folder": r"C:\\贊耀報修紀錄_立侑螺絲",  # 主資料夾名稱
-    "excel_file": "ZY_MA_Recoder.xlsx",  # excel名稱
+    "name": "立侑螺絲",
+    "prefix": "L",
+    "system_name": "立侑螺絲-資訊報修系統",
+    "password": "22239029",
+    "record_folder": r"C:\\贊耀報修紀錄_立侑螺絲",
+    "excel_file": "ZY_MA_Recoder.xlsx",
     "recipient_emails": [
         "zanyao0925@gmail.com",
         "candy09231103@gmail.com",
         "sheep255174@gmail.com",
         "Zanyao.Service@msa.hinet.net",
     ],
-    #####  公司方面(更改) #####
     "ftp_host": "192.168.1.253",
     "ftp_port": 8821,
     "ftp_username": "admin",
     "ftp_password": "0920533965",
-    "ftp_target_folder": "/MA_Recoder",  # 資料夾
+    "ftp_target_folder": "/MA_Recoder",
     "sender_email": "Zanyao.Service@msa.hinet.net",
     "smtp_password": "Zanyao0915$",
 }
@@ -67,7 +66,6 @@ screenshot_preview_frame = None
 
 
 def clean_text(text):
-    """清理文字，移除無法處理的字符"""
     try:
         return text.encode("utf-8", errors="replace").decode("utf-8").strip()
     except Exception as e:
@@ -75,7 +73,6 @@ def clean_text(text):
 
 
 def add_image_preview(image_path, which="select"):
-    """圖片縮圖後，放到對應的 frame"""
     if not os.path.exists(image_path):
         return
 
@@ -85,15 +82,11 @@ def add_image_preview(image_path, which="select"):
     preview_images.append(tk_img)
 
     if which == "select":
-
         select_preview_label.config(text="")
-
         lbl = tk.Label(attachment_preview_frame, image=tk_img)
         lbl.pack(side=tk.LEFT, padx=5, pady=5)
-
     else:
         capture_preview_label.config(text="")
-
         lbl = tk.Label(screenshot_preview_frame, image=tk_img)
         lbl.pack(side=tk.LEFT, padx=5, pady=5)
 
@@ -135,22 +128,20 @@ def select_image():
 
 
 def capture_screenshot():
-    """進行畫面截圖 (支援多螢幕)"""
     root.iconify()
 
     monitors = get_monitors()
 
-    min_x = min(monitor.x for monitor in monitors)
-    min_y = min(monitor.y for monitor in monitors)
-    max_x = max(monitor.x + monitor.width for monitor in monitors)
-    max_y = max(monitor.y + monitor.height for monitor in monitors)
+    min_x = min(m.x for m in monitors)
+    min_y = min(m.y for m in monitors)
+    max_x = max(m.x + m.width for m in monitors)
+    max_y = max(m.y + m.height for m in monitors)
 
     total_width = max_x - min_x
     total_height = max_y - min_y
 
     overlay = tk.Toplevel()
     overlay.geometry(f"{total_width}x{total_height}+{min_x}+{min_y}")
-
     overlay.attributes("-alpha", 0.3)
     overlay.overrideredirect(True)
     overlay.attributes("-topmost", True)
@@ -191,7 +182,6 @@ def capture_screenshot():
             real_x1 = x1 + min_x
             real_y1 = y1 + min_y
 
-            screenshot = pyautogui.screenshot(region=(real_x1, real_y1, width, height))
             if not os.path.exists(CONFIG["record_folder"]):
                 os.makedirs(CONFIG["record_folder"])
 
@@ -199,13 +189,22 @@ def capture_screenshot():
             save_path = os.path.join(
                 CONFIG["record_folder"], f"screenshot_{timestamp}.png"
             )
-            screenshot.save(save_path)
+
+            with mss.mss() as sct:
+                monitor = {
+                    "top": real_y1,
+                    "left": real_x1,
+                    "width": width,
+                    "height": height,
+                }
+                screenshot = sct.grab(monitor)
+                img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
+                img.save(save_path)
 
             attachment_paths.append(save_path)
             attachment_label.config(
                 text=f"附件數量: {len(attachment_paths)}", font=("標楷體", 12, "bold")
             )
-
             add_image_preview(save_path, which="capture")
 
             root.deiconify()
@@ -216,8 +215,36 @@ def capture_screenshot():
     selection_canvas.bind("<ButtonRelease-1>", on_mouse_up)
 
 
+def generate_new_report_id():
+    today = datetime.now()
+    today_str = today.strftime("%Y%m%d")
+    default_id = f"{CONFIG['prefix']}{today_str}-001"
+
+    try:
+        ftp = FTP()
+        ftp.connect(CONFIG["ftp_host"], CONFIG["ftp_port"])
+        ftp.login(CONFIG["ftp_username"], CONFIG["ftp_password"])
+        ftp.cwd(CONFIG["ftp_target_folder"])
+        ftp.encoding = "utf-8"
+
+        buffer = io.BytesIO()
+        ftp.retrbinary(f"RETR {CONFIG['excel_file']}", buffer.write)
+        buffer.seek(0)
+        df = pd.read_excel(buffer)
+
+        if "報修時間" not in df.columns:
+            return default_id
+
+        df["報修時間"] = pd.to_datetime(df["報修時間"], errors="coerce")
+        today_count = (df["報修時間"].dt.date == today.date()).sum()
+
+        return f"{CONFIG['prefix']}{today_str}-{today_count + 1:03d}"
+
+    except:
+        return default_id
+
+
 def send_customer_email(customer_email):
-    """發送郵件給客戶，通知報修成功"""
     sender_email = CONFIG["sender_email"]
     subject = "報修成功通知"
     body = "親愛的客戶：\n\n感謝您提交報修申請，我們已收到您的需求\n將盡快安排維修服務！\n\n敬祝\n順安！\n\n贊耀資訊"
@@ -232,12 +259,11 @@ def send_customer_email(customer_email):
             server.starttls()
             server.login(sender_email, CONFIG["smtp_password"])
             server.sendmail(sender_email, customer_email, msg.as_string())
-    except Exception as e:
-        messagebox.showerror("錯誤", f"無法發送客戶通知郵件: {e}")
+    except:
+        pass
 
 
 def generate_email_body(name, staff_id, email, phone, anydesk, description):
-    """生成郵件正文內容"""
     return (
         f"姓名: {name}\n"
         f"工號: {staff_id}\n"
@@ -248,14 +274,23 @@ def generate_email_body(name, staff_id, email, phone, anydesk, description):
     )
 
 
-def send_email(name, staff_id, email, phone, anydesk, description, attachment_paths):
-    """發送郵件，支援多個附件"""
+def send_email(
+    name,
+    staff_id,
+    email,
+    phone,
+    anydesk,
+    description,
+    attachment_paths,
+    report_id,
+):
     sender_email = CONFIG["sender_email"]
     recipient_emails = CONFIG["recipient_emails"]
     recipient_email_str = ", ".join(recipient_emails)
 
-    subject = "立侑螺絲_電腦報修單"
+    subject = f"{CONFIG['name']}_電腦報修單"
     body = (
+        f"ID: {report_id}\n"
         f"姓名: {name}\n"
         f"工號: {staff_id}\n"
         f"信箱: {email}\n"
@@ -285,12 +320,11 @@ def send_email(name, staff_id, email, phone, anydesk, description, attachment_pa
             server.starttls()
             server.login(sender_email, CONFIG["smtp_password"])
             server.sendmail(sender_email, recipient_emails, msg.as_string())
-    except Exception as e:
-        messagebox.showerror("錯誤", f"無法寄送郵件: {e}")
+    except:
+        pass
 
 
 def save_report_to_excel(name, staff_id, email, phone, anydesk, description):
-    """將報修內容儲存至 Excel 表格（覆寫方式）"""
     folder_path = CONFIG["record_folder"]
     if not os.path.exists(folder_path):
         os.makedirs(folder_path)
@@ -298,6 +332,7 @@ def save_report_to_excel(name, staff_id, email, phone, anydesk, description):
     filename = CONFIG["excel_file"]
     file_path = os.path.join(folder_path, filename)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     data = [
         {
             "姓名": name,
@@ -318,12 +353,10 @@ def save_report_to_excel(name, staff_id, email, phone, anydesk, description):
         df_combined = df_new
 
     df_combined.to_excel(file_path, index=False)
-    print(f"Excel 檔案 {filename} 已更新。")
     return os.path.abspath(file_path)
 
 
 def upload_excel_to_ftp(single_record: dict):
-    """從 NAS 抓原始 Excel 加上單筆報修資料，上傳覆寫（不用本地 Excel 檔）"""
     try:
         ftp = FTP()
         ftp.connect(CONFIG["ftp_host"], CONFIG["ftp_port"])
@@ -338,8 +371,7 @@ def upload_excel_to_ftp(single_record: dict):
             ftp.retrbinary(f"RETR {filename}", remote_buffer.write)
             remote_buffer.seek(0)
             df_existing = pd.read_excel(remote_buffer)
-            print(f"📥 從 NAS 下載的紀錄，共 {len(df_existing)} 筆")
-        except Exception as e:
+        except:
             df_existing = None
 
         df_new = pd.DataFrame([single_record])
@@ -355,7 +387,6 @@ def upload_excel_to_ftp(single_record: dict):
 
         ftp.storbinary(f"STOR {filename}", output_buffer)
         ftp.quit()
-        print(f"✅ 已新增 1 筆，總共 {len(df_combined)} 筆")
 
     except Exception as e:
         raise RuntimeError(f"FTP 上傳失敗: {e}")
@@ -388,8 +419,6 @@ def verify_password():
 
 
 def submit_report():
-    """提交報修按鈕"""
-
     if not verify_password():
         return
 
@@ -408,17 +437,23 @@ def submit_report():
             return
 
     except ValueError as e:
-        messagebox.showerror("錯誤", f"清理文字時發生問題: {e}")
+        messagebox.showerror("錯誤", f"清理文字發生問題: {e}")
         return
 
+    report_id = generate_new_report_id()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     record = {
+        "ID": report_id,
         "姓名": name,
         "工號": staff_id,
         "信箱": email,
         "電話(分機)": phone,
         "Anydesk號碼": anydesk,
         "問題描述": description,
-        "報修時間": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "報修時間": timestamp,
+        "處理方式": "",
+        "處理時間": "",
     }
 
     local_excel_path = save_report_to_excel(
@@ -430,7 +465,16 @@ def submit_report():
     except Exception as e:
         messagebox.showerror("錯誤", f"NAS 上傳失敗: {e}")
 
-    send_email(name, staff_id, email, phone, anydesk, description, attachment_paths)
+    send_email(
+        name,
+        staff_id,
+        email,
+        phone,
+        anydesk,
+        description,
+        attachment_paths,
+        report_id,
+    )
 
     if email != "未填寫":
         send_customer_email(email)
@@ -450,10 +494,7 @@ def main():
     root.title(CONFIG["system_name"])
 
     root.resizable(False, False)
-    root.minsize(700, 700)
-
-    root.columnconfigure(0, weight=1)
-    root.columnconfigure(1, weight=1)
+    root.minsize(600, 650)
 
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
@@ -511,28 +552,28 @@ def main():
 
     tk.Button(
         root, text="畫面截圖", command=capture_screenshot, font=("標楷體", 12)
-    ).grid(row=9, column=0, pady=5, padx=(50, 10), sticky=tk.W)
+    ).grid(row=8, column=0, pady=5, padx=(50, 10), sticky=tk.W)
 
     capture_preview_label = tk.Label(root, text="無截圖預覽", font=("標楷體", 12))
-    capture_preview_label.grid(row=9, column=1, padx=(10, 10), pady=5, sticky=tk.W)
+    capture_preview_label.grid(row=8, column=1, padx=(10, 10), pady=5, sticky=tk.W)
 
     screenshot_preview_frame = tk.Frame(root)
-    screenshot_preview_frame.grid(row=9, column=1, padx=0, pady=10, sticky=tk.W)
+    screenshot_preview_frame.grid(row=8, column=1, padx=0, pady=10, sticky=tk.W)
 
     attachment_label = tk.Label(
         root, text="未選擇附件", font=("標楷體", 12), anchor="w"
     )
-    attachment_label.grid(row=11, column=0, padx=50, pady=5, sticky=tk.W)
+    attachment_label.grid(row=10, column=0, padx=50, pady=5, sticky=tk.W)
 
     submit_button = tk.Button(
         root, text="提交報修", command=submit_report, font=("標楷體", 14, "bold")
     )
-    submit_button.grid(row=12, column=0, columnspan=2, pady=(20, 20))
+    submit_button.grid(row=11, column=0, columnspan=2, pady=(20, 20))
 
     footer_label = tk.Label(
-        root, text="Copyright by ZY-Info V1.0", font=("標楷體", 11, "bold")
+        root, text="Copyright by ZY-Info V1.6", font=("標楷體", 11, "bold")
     )
-    footer_label.grid(row=13, column=1, sticky=tk.E, padx=10, pady=10)
+    footer_label.grid(row=12, column=1, sticky=tk.E, padx=10, pady=10)
 
     root.mainloop()
 
